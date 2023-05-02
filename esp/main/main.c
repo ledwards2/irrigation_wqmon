@@ -12,7 +12,7 @@ void app_main(void)
 {
     printf("Hello world!\n");
 
-    ec_sensor_init(); 
+    analog_sensors_init(); 
 
     int reading;
     float conductivity; 
