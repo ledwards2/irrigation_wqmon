@@ -5,8 +5,24 @@
 #include "freertos/event_groups.h"
 #include "esp_log.h"
 #include "esp_event.h"
-#define WIFI_SSID "WiFi-3B5C27"
-#define WIFI_PWD "36498369"
+#include "nvs_flash.h"
+#include "mqtt_client.h"
+
+#include "lwip/sockets.h"
+#include "lwip/dns.h"
+#include "lwip/netdb.h"
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+#define WIFI_MAX_RETRY 10
+#define EXAMPLE_H2E_IDENTIFIER ""
+#define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
+
+//#define WIFI_SSID "WiFi-3B5C27"
+//#define WIFI_PWD "36498369"
+
+#define WIFI_SSID "HUAWEI P30"
+#define WIFI_PWD "b5747801dcbe"
 
 #define MQTT_BROKER_URL "mqtt://mqtt.tago.io"
 #define MQTT_BROKER_PWD "54be2595-549f-44c2-9541-3bb1e362722a"

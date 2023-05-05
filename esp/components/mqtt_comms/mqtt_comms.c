@@ -1,17 +1,6 @@
 #include <stdio.h>
 #include "mqtt_comms.h"
-#include "nvs_flash.h"
-#include "mqtt_client.h"
 
-#include "lwip/sockets.h"
-#include "lwip/dns.h"
-#include "lwip/netdb.h"
-
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
-#define WIFI_MAX_RETRY 10
-#define EXAMPLE_H2E_IDENTIFIER ""
-#define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
 esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
         .credentials.username = MQTT_BROKER_USERNAME,
