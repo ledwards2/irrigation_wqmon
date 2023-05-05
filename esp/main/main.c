@@ -23,6 +23,8 @@ void app_main(void)
     memcpy(&msg.unit, "mS", 3);
     memcpy(&msg.variable, "EC", 3);
  
+    vTaskDelay(1000);
+    tago_subscribe("wqmon/firmware/rx");
     while (1)  {
         reading = adc1_get_raw(ADC1_CHANNEL_0); 
         conductivity = adc_to_msiemen_cm(reading); 

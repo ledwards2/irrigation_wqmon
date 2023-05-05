@@ -125,17 +125,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-        msg_id = esp_mqtt_client_publish(client, "tago/data/post", "data_3", 0, 1, 0);
-        ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
-
-        msg_id = esp_mqtt_client_subscribe(client, "tago/data/post", 0);
-        ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
-
-        msg_id = esp_mqtt_client_subscribe(client, "tago/data/post", 1);
-        ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
-
-        msg_id = esp_mqtt_client_unsubscribe(client, "tago/data/post");
-        ESP_LOGI(TAG, "sent unsubscribe successful, msg_id=%d", msg_id);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -143,8 +132,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-        msg_id = esp_mqtt_client_publish(client, "tago/data/post", "data", 0, 0, 0);
-        ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+        
         break;
     case MQTT_EVENT_UNSUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
@@ -154,6 +142,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
     case MQTT_EVENT_DATA:
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+        // We have received something via MQTT
+        tago_mqtt_data_cb(event); 
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
         break;
@@ -174,7 +164,45 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
+void tago_mqtt_data_cb(esp_mqtt_event_handle_t event) {
+    ESP_LOGI(TAG, "tago data cb with %s", event->topic);
+    if (strcmp(event->topic, "wqmon/firmware/rx") == 0) {
+        // Firmware update information. Perform OTA update. 
+        wqmon_ota_update(event->data, event->data_len); 
+    }
+}
 
+void wqmon_ota_update(char* data, int data_len) {
+    const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "Couldn't get OTA update partition");
+        return; 
+    }
+    esp_ota_handle_t update_handle = 0; 
+    esp_err_t err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Update failed");
+        esp_ota_abort(update_handle);
+        return; 
+    }
+
+    err = esp_ota_write(update_handle, (const void* ) (data), data_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Write failed");
+        esp_ota_abort(update_handle);
+        return; 
+    }
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Couldnt end update");
+        return; 
+    }
+
+    ESP_LOGI(TAG, "Restarting!");
+    esp_restart();
+}
 void mqtt_tx_queue_init(void) {
     //mqtt_tx_msgq = xQueueCreate(MQTT_TX_QUEUE_LEN, sizeof(struct tago_msg));
 }
@@ -214,4 +242,9 @@ esp_err_t tago_send(struct tago_msg msg) {
     esp_err_t msg_id = esp_mqtt_client_publish(client, "tago/data/post", mqtt_msg, 0, 0, 0);
     free(mqtt_msg);
     return msg_id;
+}
+
+esp_err_t tago_subscribe(char* topic) {
+    int qos = 1; 
+    return (esp_err_t) (esp_mqtt_client_subscribe(client, topic, qos));
 }
