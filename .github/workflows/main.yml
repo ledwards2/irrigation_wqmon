@@ -21,7 +21,7 @@ jobs:
     - name: esp-idf build
       uses: Fishwaldo/esp-idf-ci-action@v1.2
       with:
-        esp_idf_version: v4.4.3
+        esp_idf_version: v5.0.1
         target: ${{ matrix.targets }}
         path: 'esp'
     - name: Rename artifact
