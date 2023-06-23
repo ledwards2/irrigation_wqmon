@@ -27,8 +27,8 @@ jobs:
     - name: Rename artifact
       run: |
         ls -lah 
-        cp esp/build/esp_ghota_example.bin esp_ghota_example-${{ matrix.targets }}.bin
-        cp esp/build/storage.bin storage-${{ matrix.targets }}.bin
+        cp esp/build/main.bin irrigation_wqmon_${{ matrix.targets }}.bin
+        cp esp/build/storage.bin storage_irrigation_wqmon_${{ matrix.targets }}.bin
     - name: Archive Firmware Files
       uses: actions/upload-artifact@v3
       with: 
