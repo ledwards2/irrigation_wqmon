@@ -133,6 +133,13 @@ void app_main(void)
     }
     esp_event_handler_register(GHOTA_EVENTS, ESP_EVENT_ANY_ID, &ghota_event_callback, ghota_client);
 
+
+    // Do this to try to update immediately
+    ESP_ERROR_CHECK(ghota_start_update_task(ghota_client));
+
+    // Do this to poll for updates based on ghota_config_t.updateInterval
+    //ESP_ERROR_CHECK(ghota_start_update_timer(ghota_client));
+
     while (1)  {
         reading = adc1_get_raw(ADC1_CHANNEL_0); 
         conductivity = adc_to_msiemen_cm(reading); 
