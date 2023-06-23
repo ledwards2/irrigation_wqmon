@@ -47,7 +47,7 @@ jobs:
         path: release
     - name: Release Firmware
       uses: ncipollo/release-action@v1
-      if: startsWith(github.ref, 'refs/tags/') 
+      # if: startsWith(github.ref, 'refs/tags/') 
       with:
         artifacts: release/*/*.bin
         generateReleaseNotes: true
