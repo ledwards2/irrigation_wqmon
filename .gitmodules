@@ -1,0 +1,3 @@
+[submodule "esp/components/esp_ghota"]
+	path = esp/components/esp_ghota
+	url = https://github.com/ledwards2/esp_ghota.git
