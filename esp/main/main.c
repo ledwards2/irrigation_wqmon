@@ -17,7 +17,7 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_ghota.h>
-
+int spiffs_read_creds(char ssid[], char pwd[]);
 /* For the ESP-IDF logging API */
 static const char* TAG = "main";
 void unmount_spiffs() {
@@ -42,6 +42,28 @@ static void read_from_spiffs(void)
 
     // Display the read contents from the file
     ESP_LOGI(TAG, "Read from test.txt: %s", buf);
+}
+
+int spiffs_read_creds(char ssid[], char pwd[]) {
+    FILE* ssid_spiffs = fopen("/spiffs/ssid.txt", "r"); 
+    FILE* pwd_spiffs = fopen("/spiffs/pwd.txt", "r"); 
+
+    if (ssid_spiffs == NULL || pwd_spiffs == NULL) {
+        ESP_LOGE(TAG, "Couldn't retrieve wifi credentials from storage");
+        return 0; 
+    }
+
+    memset(ssid, 0, WIFI_SSID_LEN); 
+    memset(pwd, 0, WIFI_PWD_LEN);
+    //fread(ssid, 1, WIFI_SSID_LEN, ssid_spiffs); 
+    //fread(pwd, 1, WIFI_PWD_LEN, pwd_spiffs); 
+    fgets(ssid, WIFI_SSID_LEN, ssid_spiffs);
+    fgets(pwd, WIFI_PWD_LEN, pwd_spiffs);
+    ESP_LOGI(TAG, "Got from spiffs: %s, %s", ssid, pwd); 
+
+    fclose(ssid_spiffs); 
+    fclose(pwd_spiffs); 
+    return 1;
 }
 
 void mount_spiffs() {
@@ -104,7 +126,14 @@ void app_main(void)
     printf("Hello world!\n");
 
     analog_sensors_init(); 
-    wifi_init();
+    mount_spiffs();
+    char pwd[WIFI_PWD_LEN]; 
+    char ssid[WIFI_SSID_LEN];
+    spiffs_read_creds(ssid, pwd);
+    ESP_LOGI(TAG, "here: %s, %s", pwd, ssid);
+
+    
+    wifi_init(ssid, pwd);
     //mqtt_init();
     int reading;
     float conductivity; 
@@ -113,16 +142,16 @@ void app_main(void)
     memcpy(&msg.variable, "EC", 3);
     
     vTaskDelay(1000);
-    //tago_subscribe("wqmon/firmware/rx");
+    tago_subscribe("wqmon/firmware/rx");
 
     ghota_config_t ghconfig = {
         .filenamematch = "irrigation_wqmon_esp32s3.bin",
-        .storagenamematch = "storage_irrigation_wqmon_esp32s3.bin",
+        // Don't OTA update storage partition. 
+        .storagenamematch = "-",
         .storagepartitionname = "storage", 
         .updateInterval = 1, 
     }; 
-    ESP_LOGD(TAG, "Doing ghota init here");
-    printf("maybe logd isn't working?\r\n");
+    
     ghota_client_handle_t* ghota_client = ghota_init(&ghconfig); 
 
     if (!ghota_client) {

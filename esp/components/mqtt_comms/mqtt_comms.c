@@ -37,7 +37,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-void wifi_init(void)
+void wifi_init(char wifi_ssid[], char wifi_pwd[])
 {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -70,18 +70,24 @@ void wifi_init(void)
 
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PWD,
+            // Example code does this - only works with #DEFINES.
+            //.ssid = wifi_ssid, 
+            //.password = wifi_pwd,
             /* Authmode threshold resets to WPA2 as default if password matches WPA2 standards (pasword len => 8).
              * If you want to connect the device to deprecated WEP/WPA networks, Please set the threshold value
              * to WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK and set the password with length and format matching to
              * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
              */
             .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
-            .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
+            //.sae_pwe_h2e = ESP_WIFI_SAE_MODE,
             //.sae_h2e_identifier = EXAMPLE_H2E_IDENTIFIER,
         },
     };
+
+    // Copy in password and SSID from parameters 
+    memcpy(wifi_config.sta.ssid, wifi_ssid, WIFI_SSID_LEN);
+    memcpy(wifi_config.sta.password, wifi_pwd, WIFI_PWD_LEN);
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK(esp_wifi_start() );
@@ -100,10 +106,10 @@ void wifi_init(void)
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
-                 WIFI_SSID, WIFI_PWD);
+                 wifi_ssid, wifi_pwd);
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-                 WIFI_SSID, WIFI_PWD);
+                 wifi_ssid, wifi_pwd);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }

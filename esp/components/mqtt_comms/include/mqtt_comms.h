@@ -21,14 +21,13 @@
 #define EXAMPLE_H2E_IDENTIFIER ""
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
 
-#define WIFI_SSID "testnet"
-#define WIFI_PWD "dontusethis"
-
-
 #define MQTT_BROKER_URL "mqtt://mqtt.tago.io"
 #define MQTT_BROKER_PWD "54be2595-549f-44c2-9541-3bb1e362722a"
 #define MQTT_BROKER_USERNAME "Token"
-
+// WPA standard max length for passwords is 63 bits 
+#define WIFI_PWD_LEN 64 
+// WPA standard max length for ssids is 32 bits
+#define WIFI_SSID_LEN 33
 struct tago_msg {
     char variable[20];
     char unit[20];
@@ -36,7 +35,7 @@ struct tago_msg {
 };
 
 // name(str), value(float), unit(str)
-extern void wifi_init();
+extern void wifi_init(char ssid[], char pwd[]);
 extern void mqtt_init(); 
 
 extern QueueHandle_t mqtt_tx_msgq; 
