@@ -43,6 +43,3 @@ extern QueueHandle_t mqtt_tx_msgq;
 extern esp_err_t tago_send(struct tago_msg);
 
 extern esp_err_t tago_subscribe(char* topic);
-
-void wqmon_ota_update(char* data, int data_len);
-void tago_mqtt_data_cb(esp_mqtt_event_handle_t event);

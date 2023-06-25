@@ -170,45 +170,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
-void tago_mqtt_data_cb(esp_mqtt_event_handle_t event) {
-    ESP_LOGI(TAG, "tago data cb with %s", event->topic);
-    if (strcmp(event->topic, "wqmon/firmware/rx") == 0) {
-        // Firmware update information. Perform OTA update. 
-        wqmon_ota_update(event->data, event->data_len); 
-    }
-}
-
-void wqmon_ota_update(char* data, int data_len) {
-    const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-
-    if (update_partition == NULL) {
-        ESP_LOGE(TAG, "Couldn't get OTA update partition");
-        return; 
-    }
-    esp_ota_handle_t update_handle = 0; 
-    esp_err_t err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Update failed");
-        esp_ota_abort(update_handle);
-        return; 
-    }
-
-    err = esp_ota_write(update_handle, (const void* ) (data), data_len);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Write failed");
-        esp_ota_abort(update_handle);
-        return; 
-    }
-
-    err = esp_ota_end(update_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Couldnt end update");
-        return; 
-    }
-
-    ESP_LOGI(TAG, "Restarting!");
-    esp_restart();
-}
 void mqtt_tx_queue_init(void) {
     //mqtt_tx_msgq = xQueueCreate(MQTT_TX_QUEUE_LEN, sizeof(struct tago_msg));
 }
