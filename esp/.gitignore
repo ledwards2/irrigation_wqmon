@@ -1,3 +1,7 @@
 build
 .vscode
 .devcontainer
+partition_table/* 
+partition_table/
+*.log
+*.lock
