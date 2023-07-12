@@ -1,3 +1,9 @@
 [submodule "esp/components/esp_ghota"]
 	path = esp/components/esp_ghota
 	url = https://github.com/ledwards2/esp_ghota.git
+[submodule "esp/components/esp32-owb"]
+	path = esp/components/esp32-owb
+	url = https://github.com/DavidAntliff/esp32-owb.git
+[submodule "esp/components/esp32-ds18b20"]
+	path = esp/components/esp32-ds18b20
+	url = https://github.com/DavidAntliff/esp32-ds18b20.git
