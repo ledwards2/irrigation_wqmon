@@ -39,11 +39,12 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 
 void wifi_init(char wifi_ssid[], char wifi_pwd[])
 {
+    
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       ret = nvs_flash_init();
-    }
+    }  
     ESP_ERROR_CHECK(ret);
     s_wifi_event_group = xEventGroupCreate();
 

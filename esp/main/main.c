@@ -17,6 +17,16 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_ghota.h>
+
+#include "owb.h"
+#include "owb_rmt.h"
+#include "ds18b20.h"
+
+#define GPIO_DS18B20_0       (12)
+#define DS18B20_MAX_DEVICES          (1)
+#define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
+#define DS18B20_SAMPLE_PERIOD        (1000)   // milliseconds
+
 int spiffs_read_creds(char ssid[], char pwd[]);
 /* For the ESP-IDF logging API */
 static const char* TAG = "main";
@@ -121,6 +131,7 @@ static void ghota_event_callback(void* handler_args, esp_event_base_t base, int3
     return;
 }
 
+
 void app_main(void)
 {
     printf("Hello world!\n");
@@ -134,16 +145,14 @@ void app_main(void)
 
     
     wifi_init(ssid, pwd);
-    //mqtt_init();
-    int reading;
-    float conductivity; 
-    struct tago_msg msg;
-    memcpy(&msg.unit, "mS", 3);
-    memcpy(&msg.variable, "EC", 3);
+    
     
     vTaskDelay(1000);
-    tago_subscribe("wqmon/firmware/rx");
+    mqtt_init();
 
+    vTaskDelay(1000);
+    //tago_subscribe("wqmon/firmware/rx");
+    
     ghota_config_t ghconfig = {
         .filenamematch = "irrigation_wqmon_esp32s3.bin",
         // Don't OTA update storage partition. 
@@ -164,18 +173,61 @@ void app_main(void)
 
 
     // Do this to try to update immediately
-    ESP_ERROR_CHECK(ghota_start_update_task(ghota_client));
+    //ESP_ERROR_CHECK(ghota_start_update_task(ghota_client));
 
     // Do this to poll for updates based on ghota_config_t.updateInterval
-    //ESP_ERROR_CHECK(ghota_start_update_timer(ghota_client));
+    ESP_ERROR_CHECK(ghota_start_update_timer(ghota_client));
+
+    
+    // Create a 1-Wire bus, using the RMT timeslot driver
+    OneWireBus * owb;
+    owb_rmt_driver_info rmt_driver_info;
+    owb = owb_rmt_initialize(&rmt_driver_info, GPIO_DS18B20_0, RMT_CHANNEL_0, RMT_CHANNEL_4);
+    owb_use_crc(owb, true);  // enable CRC check for ROM code
+
+    OneWireBus_SearchState search_state = {0};
+    bool found = false;
+    owb_search_first(owb, &search_state, &found);
+    owb_search_first(owb, &search_state, &found);
+    if (!found) { 
+        ESP_LOGE(TAG, "DS18B20 Not Found");
+    }
+
+    DS18B20_Info* dev = ds18b20_malloc(); 
+    ds18b20_init_solo(dev, owb); 
+    ds18b20_use_crc(dev, true); 
+    ds18b20_set_resolution(dev, DS18B20_RESOLUTION); 
+
+
+    float temp; 
+
+    int reading;
+    float conductivity; 
+    struct tago_msg msg;
+    memcpy(&msg.unit, "mS", 3);
+    memcpy(&msg.variable, "EC", 3);
+
+    struct tago_msg temp_msg;
+    memcpy(temp_msg.unit, "deg C", 6);
+    memcpy(&temp_msg.variable, "temp", 5); 
 
     while (1)  {
         reading = adc1_get_raw(ADC1_CHANNEL_0); 
         conductivity = adc_to_msiemen_cm(reading); 
         printf("Reading: %fmS/cm\n", conductivity); 
         msg.value = conductivity;
-        //tago_send(msg);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        tago_send(msg);
+
+        ds18b20_convert_all(owb);
+
+            // In this application all devices use the same resolution,
+            // so use the first device to determine the delay
+        ds18b20_wait_for_conversion(dev);
+
+        ds18b20_read_temp(dev, &temp_msg.value); 
+        ESP_LOGI(TAG, "Temp: %f", temp_msg.value); 
+        tago_send(temp_msg);
+        vTaskDelay(4000 / portTICK_PERIOD_MS);
 
     }
 

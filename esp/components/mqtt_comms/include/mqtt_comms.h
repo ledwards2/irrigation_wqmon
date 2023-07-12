@@ -11,8 +11,8 @@
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
-#include "esp_ota_ops.h"
-#include "esp_flash_partitions.h"
+//#include "esp_ota_ops.h"
+//#include "esp_flash_partitions.h"
 
 
 #define WIFI_CONNECTED_BIT BIT0
