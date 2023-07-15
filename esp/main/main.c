@@ -26,7 +26,9 @@
 #define DS18B20_MAX_DEVICES          (1)
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
 #define DS18B20_SAMPLE_PERIOD        (1000)   // milliseconds
-
+void ds18b20_handler(void* pvParam);
+void handler_thread(void* _unused);
+QueueHandle_t sensorMessages;
 int spiffs_read_creds(char ssid[], char pwd[]);
 /* For the ESP-IDF logging API */
 static const char* TAG = "main";
@@ -131,12 +133,18 @@ static void ghota_event_callback(void* handler_args, esp_event_base_t base, int3
     return;
 }
 
-
-void app_main(void)
+void app_main(void) {
+    xTaskCreate(handler_thread, 
+            "handler", 
+            100 * configMINIMAL_STACK_SIZE, 
+            NULL,
+            tskIDLE_PRIORITY + 1, 
+            NULL);
+}
+void handler_thread(void* _unused)
 {
     printf("Hello world!\n");
 
-    analog_sensors_init(); 
     mount_spiffs();
     char pwd[WIFI_PWD_LEN]; 
     char ssid[WIFI_SSID_LEN];
@@ -158,7 +166,7 @@ void app_main(void)
         // Don't OTA update storage partition. 
         .storagenamematch = "-",
         .storagepartitionname = "storage", 
-        .updateInterval = 1, 
+        .updateInterval = 30, 
     }; 
     
     ghota_client_handle_t* ghota_client = ghota_init(&ghconfig); 
@@ -177,8 +185,58 @@ void app_main(void)
 
     // Do this to poll for updates based on ghota_config_t.updateInterval
     ESP_ERROR_CHECK(ghota_start_update_timer(ghota_client));
-
+    sensorMessages = xQueueCreate(10, sizeof(struct tago_msg)); 
+    void* param = &sensorMessages; 
+    xTaskCreate(
+        ds18b20_handler, 
+        "ds18b20",
+        3 * configMINIMAL_STACK_SIZE, 
+        &param,
+        tskIDLE_PRIORITY + 3, 
+        NULL);
     
+
+
+    int reading;
+    float conductivity; 
+    struct tago_msg msgRx;
+    struct tago_msg msg; 
+    memcpy(&msg.unit, "mS", 3);
+    memcpy(&msg.variable, "EC", 3);
+
+    struct tago_msg temp_msg;
+    memcpy(temp_msg.unit, "deg C", 6);
+    memcpy(&temp_msg.variable, "temp", 5); 
+
+    while (1)  {
+        /*
+        reading = adc1_get_raw(ADC1_CHANNEL_0); 
+        conductivity = adc_to_msiemen_cm(reading); 
+        printf("Reading: %fmS/cm\n", conductivity); 
+        msg.value = conductivity;
+        tago_send(msg);
+
+
+        tago_send(temp_msg);
+        */ 
+
+       if (xQueueReceive(sensorMessages, &msgRx, portMAX_DELAY)) {
+        tago_send(msgRx); 
+       }
+        //vTaskDelay(10000 / portTICK_PERIOD_MS);
+
+    }
+
+}
+
+void adc_sensor_handler(QueueHandle_t sendTo) { 
+    analog_sensors_init(); 
+
+}
+
+
+void ds18b20_handler(void* pvParam) {
+    QueueHandle_t sendTo = *(QueueHandle_t*) pvParam;
     // Create a 1-Wire bus, using the RMT timeslot driver
     OneWireBus * owb;
     owb_rmt_driver_info rmt_driver_info;
@@ -200,36 +258,27 @@ void app_main(void)
 
 
     float temp; 
-
-    int reading;
-    float conductivity; 
     struct tago_msg msg;
-    memcpy(&msg.unit, "mS", 3);
-    memcpy(&msg.variable, "EC", 3);
+    const char* TAG = "ds18b20_handler"; 
+    memcpy(msg.unit, "deg C", 6);
+    memcpy(&msg.variable, "temp", 5); 
 
-    struct tago_msg temp_msg;
-    memcpy(temp_msg.unit, "deg C", 6);
-    memcpy(&temp_msg.variable, "temp", 5); 
-
-    while (1)  {
-        reading = adc1_get_raw(ADC1_CHANNEL_0); 
-        conductivity = adc_to_msiemen_cm(reading); 
-        printf("Reading: %fmS/cm\n", conductivity); 
-        msg.value = conductivity;
-        tago_send(msg);
-
+    // Don't start working until the queue is ready 
+    while (!sendTo) {
+        vTaskDelay(100); 
+    }
+    while (1) {
         ds18b20_convert_all(owb);
 
             // In this application all devices use the same resolution,
             // so use the first device to determine the delay
         ds18b20_wait_for_conversion(dev);
 
-        ds18b20_read_temp(dev, &temp_msg.value); 
-        ESP_LOGI(TAG, "Temp: %f", temp_msg.value); 
-        tago_send(temp_msg);
-        vTaskDelay(4000 / portTICK_PERIOD_MS);
-
+        ds18b20_read_temp(dev, &msg.value); 
+        ESP_LOGI(TAG, "Temp: %f", msg.value); 
+        if (xQueueSendToBack(sensorMessages, &msg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to queue");
+        }
+        vTaskDelay(10000 / portTICK_PERIOD_MS); 
     }
-
 }
-
