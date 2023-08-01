@@ -17,17 +17,27 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_ghota.h>
-
+#include <driver/i2c.h> 
 #include "owb.h"
 #include "owb_rmt.h"
 #include "ds18b20.h"
+#include "nau7802.h"
 
 #define GPIO_DS18B20_0       (12)
 #define DS18B20_MAX_DEVICES          (1)
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
 #define DS18B20_SAMPLE_PERIOD        (1000)   // milliseconds
+
+
+#define SENSOR_POLL_TIME_MS 10000
+#define I2C_SCL 9
+#define I2C_SDA 10 
+#define I2C_PORT I2C_NUM_1
 void ds18b20_handler(void* pvParam);
 void handler_thread(void* _unused);
+void adc_sensor_handler(void* pvParam);
+
+void nau7802_handler(void* pvParam);
 QueueHandle_t sensorMessages;
 int spiffs_read_creds(char ssid[], char pwd[]);
 /* For the ESP-IDF logging API */
@@ -155,14 +165,16 @@ void handler_thread(void* _unused)
     wifi_init(ssid, pwd);
     
     
-    vTaskDelay(1000);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     mqtt_init();
 
-    vTaskDelay(1000);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
     //tago_subscribe("wqmon/firmware/rx");
     
     ghota_config_t ghconfig = {
         .filenamematch = "irrigation_wqmon_esp32s3.bin",
+        .orgname = "ledwards2", 
+        .reponame = "irrigation_wqmon",
         // Don't OTA update storage partition. 
         .storagenamematch = "-",
         .storagepartitionname = "storage", 
@@ -181,7 +193,7 @@ void handler_thread(void* _unused)
 
 
     // Do this to try to update immediately
-    //ESP_ERROR_CHECK(ghota_start_update_task(ghota_client));
+    ESP_ERROR_CHECK(ghota_start_update_task(ghota_client));
 
     // Do this to poll for updates based on ghota_config_t.updateInterval
     ESP_ERROR_CHECK(ghota_start_update_timer(ghota_client));
@@ -195,14 +207,25 @@ void handler_thread(void* _unused)
         tskIDLE_PRIORITY + 3, 
         NULL);
     
+    xTaskCreate(
+        adc_sensor_handler, 
+        "adc_sensor",
+        3 * configMINIMAL_STACK_SIZE,
+        &param,
+        tskIDLE_PRIORITY + 3, 
+        NULL); 
 
-
-    int reading;
-    float conductivity; 
+    xTaskCreate(
+        nau7802_handler, 
+        "nau7802", 
+        5 * configMINIMAL_STACK_SIZE, 
+        &param, 
+        tskIDLE_PRIORITY + 3, 
+        NULL); 
+    
+    
     struct tago_msg msgRx;
-    struct tago_msg msg; 
-    memcpy(&msg.unit, "mS", 3);
-    memcpy(&msg.variable, "EC", 3);
+    
 
     struct tago_msg temp_msg;
     memcpy(temp_msg.unit, "deg C", 6);
@@ -229,10 +252,101 @@ void handler_thread(void* _unused)
 
 }
 
-void adc_sensor_handler(QueueHandle_t sendTo) { 
-    analog_sensors_init(); 
+void adc_sensor_handler(void* pvParam) { 
+    analog_sensors_init();
+    int ecReading;
+    int phReading;
+    int turbReading;
+    int tdsReading; 
+    float conductivity;  
+
+    struct tago_msg ecMsg, phMsg, turbMsg, tdsMsg; 
+    memcpy(&ecMsg.unit, "mS/cm", 6);
+    memcpy(&ecMsg.variable, "EC", 3);
+
+    memcpy(phMsg.unit, "pH", 3);
+    memcpy(phMsg.variable, "pH", 3); 
+
+    memcpy(turbMsg.unit, "turb", 5); 
+    memcpy(turbMsg.variable, "Turbidity", sizeof("Turbidity")); 
+
+    memcpy(tdsMsg.unit, "%", 2); 
+    memcpy(tdsMsg.variable, "TDS", 4); 
+
+    const char* TAG = "adc_sensor_handler"; 
+
+    while (!sensorMessages) {
+        vTaskDelay(100); 
+    }
+    while (1) {
+        ecReading = ec_get_adc(); 
+        phReading = ph_get_adc(); 
+        turbReading = turb_get_adc(); 
+        tdsReading = tds_get_adc(); 
+        ESP_LOGI("ADC: ", "ec: %i, ph: %i, turb: %i, tds: %i", 
+                ecReading, phReading, turbReading, tdsReading);
+        
+        ecMsg.value = adc_to_msiemen_cm(ecReading); 
+
+        phMsg.value = adc_to_ph(phReading); 
+        turbMsg.value = adc_to_turb(turbReading); 
+        tdsMsg.value = adc_to_tds(tdsReading); 
+        // printf("Reading: %fmS/cm\n", conductivity); 
+
+        if (xQueueSendToBack(sensorMessages, &ecMsg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to handler"); 
+        }
+
+        if (xQueueSendToBack(sensorMessages, &phMsg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to handler"); 
+        }
+
+        if (xQueueSendToBack(sensorMessages, &turbMsg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to handler"); 
+        }
+
+        if (xQueueSendToBack(sensorMessages, &tdsMsg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to handler"); 
+        }
+
+        vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
+    }
+}
+
+void nau7802_handler(void* pvParam) {
+    struct nau7802_handle handle; 
+    struct tago_msg strainMsg; 
+    memcpy(strainMsg.variable, "strain", sizeof("strain")); 
+    memcpy(strainMsg.unit, "raw", sizeof("raw")); 
+
+    esp_err_t res = ESP_FAIL;
+    while (res != ESP_OK) {
+        ESP_LOGI("nau7802", "trying to initialize"); 
+        res = nau7802_init(I2C_SDA, I2C_SCL, I2C_PORT, &handle); 
+
+        vTaskDelay(500 / portTICK_PERIOD_MS); 
+    }
+    
+    // Don't start working until the queue is ready 
+    while (!sensorMessages) {
+        vTaskDelay(100); 
+    }
+    int32_t strain; 
+    while (1) {
+        ESP_LOGI(TAG, "Reading strain");
+        strain = nau7802_read_conversion(&handle); 
+        strainMsg.value = strain; 
+        if (xQueueSendToBack(sensorMessages, &strainMsg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to handler"); 
+        }
+        ESP_LOGI("nau7802", "strain: %li", strain);
+        vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
+    }
+
+
 
 }
+
 
 
 void ds18b20_handler(void* pvParam) {
@@ -245,10 +359,13 @@ void ds18b20_handler(void* pvParam) {
 
     OneWireBus_SearchState search_state = {0};
     bool found = false;
-    owb_search_first(owb, &search_state, &found);
-    owb_search_first(owb, &search_state, &found);
-    if (!found) { 
-        ESP_LOGE(TAG, "DS18B20 Not Found");
+    while (!found) {
+        owb_search_first(owb, &search_state, &found);
+        owb_search_first(owb, &search_state, &found);
+        if (!found) { 
+            ESP_LOGE(TAG, "DS18B20 Not Found");
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
+        }
     }
 
     DS18B20_Info* dev = ds18b20_malloc(); 
@@ -279,6 +396,6 @@ void ds18b20_handler(void* pvParam) {
         if (xQueueSendToBack(sensorMessages, &msg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to queue");
         }
-        vTaskDelay(10000 / portTICK_PERIOD_MS); 
+        vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS); 
     }
 }
