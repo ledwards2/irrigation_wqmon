@@ -1624,8 +1624,8 @@ CONFIG_WPA_MBEDTLS_TLS_CLIENT=y
 CONFIG_MAX_FILENAME_LEN=64
 CONFIG_MAX_URL_LEN=128
 CONFIG_GITHUB_HOSTNAME="api.github.com"
-CONFIG_GITHUB_OWNER="Fishwaldo"
-CONFIG_GITHUB_REPO="esp_ghota"
+CONFIG_GITHUB_OWNER="ledwards2"
+CONFIG_GITHUB_REPO="irrigation_wqmon"
 # end of Github OTA Configuration
 # end of Component config
 

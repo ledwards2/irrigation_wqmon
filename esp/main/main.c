@@ -173,8 +173,8 @@ void handler_thread(void* _unused)
     
     ghota_config_t ghconfig = {
         .filenamematch = "irrigation_wqmon_esp32s3.bin",
-        .orgname = "ledwards2", 
-        .reponame = "irrigation_wqmon",
+        //.orgname = "ledwards2", 
+        //.reponame = "irrigation_wqmon",
         // Don't OTA update storage partition. 
         .storagenamematch = "-",
         .storagepartitionname = "storage", 
