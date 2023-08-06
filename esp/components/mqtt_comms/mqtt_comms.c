@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "mqtt_comms.h"
-
+#include "lwjson.h"
 esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
         .credentials.username = MQTT_BROKER_USERNAME,
@@ -9,9 +9,12 @@ esp_mqtt_client_config_t mqtt_cfg = {
 
 esp_mqtt_client_handle_t client;
 static int s_retry_num = 0;
-
+struct MqttMsg {
+    char topic[MQTT_MSG_TOPIC_LEN + 1]; 
+    char data [MQTT_MSG_DATA_LEN + 1]; 
+}; 
 static const char *TAG = "wifi station";
-
+QueueHandle_t receivedEvents; 
 
 static EventGroupHandle_t s_wifi_event_group;
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
@@ -125,6 +128,11 @@ static void log_error_if_nonzero(const char *message, int error_code)
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
+    
+    struct MqttMsg msg; 
+    memcpy(msg.topic, "tago/my_topic", sizeof("tago/my_topic")); 
+    memcpy(msg.data, "{\"variable\":\"cali_ec_1\",\"value\":\"55\",\"unit\":\"mS/cm\"}", sizeof("{\"variable\":\"cali_ec_1\",\"value\":\"55\",\"unit\":\"mS/cm\"}"));
+
     ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%" PRIi32 "", base, event_id);
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
@@ -135,6 +143,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        // Try reconnecting 
+        esp_mqtt_client_reconnect(client);
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
@@ -152,6 +162,26 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         // We have received something via MQTT
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
+
+        if (event->topic_len > MQTT_MSG_TOPIC_LEN || event->data_len > MQTT_MSG_DATA_LEN) {
+            ESP_LOGE(TAG, "Received MQTT message is too large");
+            break; 
+        }
+        memcpy(msg.topic, event->topic, event->topic_len); 
+        msg.topic[event->topic_len] = '\0'; 
+
+        memcpy(msg.data, event->data, event->data_len); 
+        msg.data[event->data_len] = '\0';
+        
+        ESP_LOGI(TAG, "Sending: %s, %s", msg.topic, msg.data);        
+        if (receivedEvents == NULL) {
+            // Queue isn't ready yet. 
+            break; 
+        }
+        if (xQueueSendToBack(receivedEvents, &msg, 10) != pdTRUE) {
+            ESP_LOGI(TAG, "Data event queue full!"); 
+        }
+        ESP_LOGI(TAG, "Sent!");
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -177,6 +207,7 @@ void mqtt_tx_queue_init(void) {
 
 void mqtt_init() {
     mqtt_tx_queue_init(); 
+    /* 
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
     esp_log_level_set("MQTT_EXAMPLE", ESP_LOG_VERBOSE);
@@ -184,14 +215,93 @@ void mqtt_init() {
     esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
     esp_log_level_set("outbox", ESP_LOG_VERBOSE);
+    */ 
+
+    receivedEvents = xQueueCreate(MQTT_RX_EVENT_QUEUE_LEN, sizeof(struct MqttMsg));
+    if (receivedEvents == NULL) {
+        ESP_LOGE(TAG, "Couldn't create received message queue");
+    }
+    BaseType_t status = xTaskCreate(received_event_handler, "rx event handler", 100 * configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL); 
+    if (status != pdPASS) {
+        ESP_LOGE(TAG, "Couldn't allocate memory for task");
+    }
     ESP_LOGI(TAG, "Initializing MQTT");
-    
     client = esp_mqtt_client_init(&mqtt_cfg);
     /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
 }
-#define TAGO_MSG_BUF_INIT_SIZE 128
+
+
+
+void received_event_handler(void* _unused) {
+    
+    struct MqttMsg msg; 
+    static lwjson_token_t tokens[128]; 
+    static lwjson_t lwjson; 
+    int variableLen; 
+    int valueLen; 
+    
+    char* variable; 
+    char* value; 
+    lwjson_init(&lwjson, tokens, LWJSON_ARRAYSIZE(tokens));
+    while (1) {
+        vTaskDelay(69); 
+        ESP_LOGE(TAG, "Received event handler :) "); 
+
+        if (xQueueReceive(receivedEvents, &msg, portMAX_DELAY) == pdTRUE) {
+            ESP_LOGI(TAG, "Unblocked");
+            // We have new data to process. 
+            ESP_LOGI(TAG, "Got: %s, %s", msg.topic, msg.data); 
+            printf("got: %s, %s", msg.topic, msg.data);
+            if (!strcmp(msg.topic, "tago/down")) {    
+                
+                if (lwjson_parse(&lwjson, msg.data) == lwjsonOK) {
+                    ESP_LOGI(TAG, "json parsed");
+                    const lwjson_token_t * t; 
+                
+                    if ((t = lwjson_find(&lwjson, "variable")) != NULL) {
+                        ESP_LOGI(TAG, "Variable: %.*s", t->u.str.token_value_len, t->u.str.token_value);
+                        variable = t->u.str.token_value; 
+                        variableLen = t->u.str.token_value_len; 
+                    } else {
+                        // Don't bother with the rest of it - this message doesn't have a variable. 
+                        continue; 
+                    }
+                    
+                    if ((t = lwjson_find(&lwjson, "value")) != NULL) {
+                    
+                        value = t->u.str.token_value; 
+                        valueLen = t->u.str.token_value_len; 
+                        ESP_LOGI(TAG, "Value: %.*s", valueLen, value);
+                    } else {
+                        continue; 
+                    }
+
+
+
+
+                    
+
+                }
+            }
+
+
+        } else {
+            // If we didn't receive, the queue might not be ready.
+            vTaskDelay(10 / portTICK_PERIOD_MS); 
+        }
+    }
+
+    // If we break the loop, this should get freed. 
+     lwjson_free(&lwjson); 
+
+
+
+
+}
+
+
 char* tago_format_msg(char* variable, float value, char* unit) {
     char* msg = malloc(TAGO_MSG_BUF_INIT_SIZE * sizeof(char));
 

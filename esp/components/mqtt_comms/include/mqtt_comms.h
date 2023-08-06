@@ -28,6 +28,11 @@
 #define WIFI_PWD_LEN 64 
 // WPA standard max length for ssids is 32 bits
 #define WIFI_SSID_LEN 33
+
+#define MQTT_RX_EVENT_QUEUE_LEN 10 
+#define RX_EVENT_SEND_WAIT 1
+#define TAGO_MSG_BUF_INIT_SIZE 128
+
 struct tago_msg {
     char variable[20];
     char unit[20];
@@ -43,3 +48,8 @@ extern QueueHandle_t mqtt_tx_msgq;
 extern esp_err_t tago_send(struct tago_msg);
 
 extern esp_err_t tago_subscribe(char* topic);
+void received_event_handler(void* _unused);
+
+
+#define MQTT_MSG_TOPIC_LEN 63
+#define MQTT_MSG_DATA_LEN 127

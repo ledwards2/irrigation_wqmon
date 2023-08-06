@@ -169,7 +169,7 @@ void handler_thread(void* _unused)
     mqtt_init();
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    //tago_subscribe("wqmon/firmware/rx");
+    tago_subscribe("tago/down");
     
     ghota_config_t ghconfig = {
         .filenamematch = "irrigation_wqmon_esp32s3.bin",
