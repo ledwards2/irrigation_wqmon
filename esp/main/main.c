@@ -81,7 +81,6 @@ int spiffs_read_creds(char ssid[], char pwd[]) {
     //fread(pwd, 1, WIFI_PWD_LEN, pwd_spiffs); 
     fgets(ssid, WIFI_SSID_LEN, ssid_spiffs);
     fgets(pwd, WIFI_PWD_LEN, pwd_spiffs);
-    ESP_LOGI(TAG, "Got from spiffs: %s, %s", ssid, pwd); 
 
     fclose(ssid_spiffs); 
     fclose(pwd_spiffs); 
@@ -153,18 +152,18 @@ void app_main(void) {
 }
 void handler_thread(void* _unused)
 {
-    printf("Hello world!\n");
 
     mount_spiffs();
     char pwd[WIFI_PWD_LEN]; 
     char ssid[WIFI_SSID_LEN];
     spiffs_read_creds(ssid, pwd);
-    ESP_LOGI(TAG, "here: %s, %s", pwd, ssid);
 
     
     wifi_init(ssid, pwd);
-    
-    
+
+    uint8_t mac[6]; 
+    esp_wifi_get_mac(ESP_IF_WIFI_STA, mac); 
+    ESP_LOGI("MAC address", "MAC address: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);    
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     mqtt_init();
 
