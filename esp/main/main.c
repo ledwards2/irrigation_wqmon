@@ -36,12 +36,19 @@
 void ds18b20_handler(void* pvParam);
 void handler_thread(void* _unused);
 void adc_sensor_handler(void* pvParam);
+void spiffs_read_cal_param(char* fileName, float* val); 
+void spiffs_write_cal_param(char* fileName, float value);
 
 void nau7802_handler(void* pvParam);
 QueueHandle_t sensorMessages;
+
+EventGroupHandle_t calibrationFlags; 
 int spiffs_read_creds(char ssid[], char pwd[]);
 /* For the ESP-IDF logging API */
 static const char* TAG = "main";
+
+
+
 void unmount_spiffs() {
     esp_vfs_spiffs_unregister("storage");
 }
@@ -196,7 +203,10 @@ void handler_thread(void* _unused)
 
     // Do this to poll for updates based on ghota_config_t.updateInterval
     ESP_ERROR_CHECK(ghota_start_update_timer(ghota_client));
-    sensorMessages = xQueueCreate(10, sizeof(struct tago_msg)); 
+    sensorMessages = xQueueCreate(10, sizeof(struct tago_msg));
+
+
+    calibrationFlags = xEventGroupCreate();  
     void* param = &sensorMessages; 
     xTaskCreate(
         ds18b20_handler, 
@@ -209,11 +219,11 @@ void handler_thread(void* _unused)
     xTaskCreate(
         adc_sensor_handler, 
         "adc_sensor",
-        3 * configMINIMAL_STACK_SIZE,
+        5 * configMINIMAL_STACK_SIZE,
         &param,
         tskIDLE_PRIORITY + 3, 
         NULL); 
-
+    /*
     xTaskCreate(
         nau7802_handler, 
         "nau7802", 
@@ -222,7 +232,7 @@ void handler_thread(void* _unused)
         tskIDLE_PRIORITY + 3, 
         NULL); 
     
-    
+    */
     struct tago_msg msgRx;
     
 
@@ -252,7 +262,22 @@ void handler_thread(void* _unused)
 }
 
 void adc_sensor_handler(void* pvParam) { 
-    analog_sensors_init();
+    AdcSensorConfig_t senseCfg; 
+
+    spiffs_read_cal_param("/spiffs/ec_slope.txt", &senseCfg.ecSlope); 
+    spiffs_read_cal_param("/spiffs/ec_intercept.txt", &senseCfg.ecInt); 
+    spiffs_read_cal_param("/spiffs/ph_slope.txt", &senseCfg.phSlope); 
+    spiffs_read_cal_param("/spiffs/ph_intercept.txt", &senseCfg.phInt); 
+    spiffs_read_cal_param("/spiffs/tds_slope.txt", &senseCfg.tdsSlope); 
+    spiffs_read_cal_param("/spiffs/tds_intercept.txt", &senseCfg.tdsInt);
+    spiffs_read_cal_param("/spiffs/turb_slope.txt", &senseCfg.turbSlope); 
+    spiffs_read_cal_param("/spiffs/turb_intercept.txt", &senseCfg.turbInt);
+    ESP_LOGE(TAG, "startup Ec slope: %f", senseCfg.ecSlope);
+    analog_sensors_init(&senseCfg);
+    
+
+
+    
     int ecReading;
     int phReading;
     int turbReading;
@@ -277,7 +302,76 @@ void adc_sensor_handler(void* pvParam) {
     while (!sensorMessages) {
         vTaskDelay(100); 
     }
+    EventBits_t flags; 
+    int calStatus; 
+    struct CalibrationNotification notification; 
+    BaseType_t msgPending; 
+    
     while (1) {
+        // if (calibration flag) then 
+        
+        // get calibration value 
+        // set calibration value 
+        // Peek the queue, check if it is a sensor this thread cares about 
+        msgPending = xQueuePeek(CalibrationValues, &notification, 10); 
+        if (msgPending == pdTRUE) {
+            calStatus = set_cal_if_suitable(notification.variable, notification.value, &senseCfg);
+            if (calStatus != CALIBRATE_FAIL) {
+                // We had a message. It was for one of these sensors. Take it out of the queue.
+                xQueueReceive(CalibrationValues, &notification, 10); 
+                
+                // Now save to SPIFFS 
+                if (calStatus != CALIBRATE_NO_CHANGE) {
+                    char* slopeFileName; 
+                    char* intFileName; 
+                    float slope; 
+                    float intercept; 
+
+                    if (calStatus == CALIBRATED_EC) {
+                        slopeFileName = "/spiffs/ec_slope.txt"; 
+                        intFileName = "/spiffs/ec_intercept.txt"; 
+                        slope = senseCfg.ecSlope; 
+                        intercept = senseCfg.ecInt; 
+                    } else if (calStatus == CALIBRATED_PH) {
+                        slopeFileName = "/spiffs/ph_slope.txt"; 
+                        intFileName = "/spiffs/ph_intercept.txt"; 
+                        slope = senseCfg.phSlope; 
+                        intercept = senseCfg.phInt; 
+                    } else if (calStatus == CALIBRATED_TURB) {
+                        slopeFileName = "/spiffs/turb_slope.txt"; 
+                        intFileName = "/spiffs/turb_intercept.txt"; 
+                        slope = senseCfg.turbSlope; 
+                        intercept = senseCfg.turbInt; 
+                    } else if (calStatus == CALIBRATED_TDS) {
+                        slopeFileName = "/spiffs/tds_slope.txt"; 
+                        intFileName = "/spiffs/tds_intercept.txt";        
+                        slope = senseCfg.tdsSlope; 
+                        intercept = senseCfg.tdsInt; 
+                    } else {
+                        ESP_LOGE(TAG, "Calibration result not known"); 
+                        continue; 
+                    }
+                    ESP_LOGI(TAG, "Writing slope: %f for, %s, int %f to %s", slope, slopeFileName, intercept, intFileName);
+                    spiffs_write_cal_param(slopeFileName, slope); 
+                    spiffs_write_cal_param(intFileName, intercept); 
+
+                    float read; 
+                    spiffs_read_cal_param("/spiffs/ec_slope.txt", &read); 
+                    ESP_LOGI(TAG, "Read EC slope as %f", read); 
+
+                } 
+                
+            } else {
+                ESP_LOGI(TAG, "Calibration not ADC"); 
+            }
+        } 
+        // if ()
+        // if it is ec, ph, turb or tds point 1 or point 2 
+        // then set internal variables. 
+        // if it is point 2, calculate slope and intercept and put away in spiffs. 
+        // Need Generic functions for this. 
+
+
         ecReading = ec_get_adc(); 
         phReading = ph_get_adc(); 
         turbReading = turb_get_adc(); 
@@ -285,12 +379,14 @@ void adc_sensor_handler(void* pvParam) {
         ESP_LOGI("ADC: ", "ec: %i, ph: %i, turb: %i, tds: %i", 
                 ecReading, phReading, turbReading, tdsReading);
         
-        ecMsg.value = adc_to_msiemen_cm(ecReading); 
+        ecMsg.value = adc_to_msiemen_cm(ecReading, &senseCfg); 
 
-        phMsg.value = adc_to_ph(phReading); 
-        turbMsg.value = adc_to_turb(turbReading); 
-        tdsMsg.value = adc_to_tds(tdsReading); 
-        // printf("Reading: %fmS/cm\n", conductivity); 
+        phMsg.value = adc_to_ph(phReading, &senseCfg); 
+        turbMsg.value = adc_to_turb(turbReading, &senseCfg); 
+        tdsMsg.value = adc_to_tds(tdsReading, &senseCfg); 
+        printf("Reading: %fmS/cm\n", ecMsg.value); 
+
+        ESP_LOGI(TAG, "ec Slope: %f, int: %f", senseCfg.ecSlope, senseCfg.ecInt);
 
         if (xQueueSendToBack(sensorMessages, &ecMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
@@ -308,9 +404,34 @@ void adc_sensor_handler(void* pvParam) {
             ESP_LOGE(TAG, "Could not send to handler"); 
         }
 
-        vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
+        // vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
+
+
 }
+void spiffs_write_cal_param(char* fileName, float value) {
+    FILE* f = fopen(fileName, "w");
+    if (f != NULL) {
+        fprintf(f, "%f", value); 
+    } else {
+        ESP_LOGW("spiffs-write-cal-param", "file %s for writing not found", fileName);
+    }
+    fclose(f); 
+
+}
+
+void spiffs_read_cal_param(char* fileName, float* valueRead) {
+    FILE* f = fopen(fileName, "r"); 
+    if (f != NULL) {
+        fscanf(f, "%f", valueRead); 
+    } else {
+        ESP_LOGW("spiffs-read-cal-param", "file %s for reading not found", fileName); 
+    }
+    fclose(f); 
+
+}
+
 
 void nau7802_handler(void* pvParam) {
     struct nau7802_handle handle; 

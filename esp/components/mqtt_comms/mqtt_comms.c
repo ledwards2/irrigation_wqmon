@@ -232,6 +232,7 @@ void mqtt_init() {
     esp_mqtt_client_start(client);
 }
 
+QueueHandle_t CalibrationValues; 
 
 
 void received_event_handler(void* _unused) {
@@ -243,7 +244,9 @@ void received_event_handler(void* _unused) {
     int valueLen; 
     
     char* variable; 
-    char* value; 
+    float value;  
+    CalibrationValues = xQueueCreate(CALI_QUEUE_LEN, sizeof(struct CalibrationNotification));
+    struct CalibrationNotification notification; 
     lwjson_init(&lwjson, tokens, LWJSON_ARRAYSIZE(tokens));
     while (1) {
         vTaskDelay(69); 
@@ -270,35 +273,38 @@ void received_event_handler(void* _unused) {
                     }
                     
                     if ((t = lwjson_find(&lwjson, "value")) != NULL) {
-                    
-                        value = t->u.str.token_value; 
-                        valueLen = t->u.str.token_value_len; 
-                        ESP_LOGI(TAG, "Value: %.*s", valueLen, value);
+                        if (t->type == LWJSON_TYPE_NUM_REAL || t->type == LWJSON_TYPE_NUM_INT) {
+                            value = t->u.num_real; 
+                      
+                            ESP_LOGI(TAG, "Value: %f", value);
+                        } else { 
+                            ESP_LOGE(TAG, "Calibration value must be real float or int, was: %i", t->type); 
+                            continue; 
+                        }
                     } else {
                         continue; 
                     }
 
 
+                    notification.value = value; 
+                    if (NOTIFICATION_SENSOR_LEN < variableLen + 1) {
+                        ESP_LOGE(TAG, "Sensor name too long - change length definition"); 
+                        continue; 
+                    }
+                    // Now we have valid variable and lengths. 
 
-
-                    
-
+                    memcpy(notification.variable, variable, variableLen); 
+                    notification.variable[variableLen] = '\0';
+                    xQueueSendToBack(CalibrationValues, &notification, 0);  
                 }
             }
-
-
         } else {
             // If we didn't receive, the queue might not be ready.
             vTaskDelay(10 / portTICK_PERIOD_MS); 
         }
     }
-
     // If we break the loop, this should get freed. 
      lwjson_free(&lwjson); 
-
-
-
-
 }
 
 

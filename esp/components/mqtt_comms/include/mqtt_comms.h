@@ -11,6 +11,7 @@
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
+#include <string.h>
 //#include "esp_ota_ops.h"
 //#include "esp_flash_partitions.h"
 
@@ -51,5 +52,16 @@ extern esp_err_t tago_subscribe(char* topic);
 void received_event_handler(void* _unused);
 
 
+
 #define MQTT_MSG_TOPIC_LEN 63
 #define MQTT_MSG_DATA_LEN 127
+#define CALI_QUEUE_LEN 1 
+#define NOTIFICATION_SENSOR_LEN 10
+
+struct CalibrationNotification {
+    char variable[NOTIFICATION_SENSOR_LEN]; 
+    float value;
+};
+
+extern QueueHandle_t CalibrationValues;
+
