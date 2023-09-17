@@ -390,17 +390,18 @@ void adc_sensor_handler(void* pvParam) {
         if (xQueueSendToBack(sensorMessages, &phMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
         }
-
+        /* 
         if (xQueueSendToBack(sensorMessages, &turbMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
         }
-
+        */ 
+        /* 
         if (xQueueSendToBack(sensorMessages, &tdsMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
         }
-
+        */ 
         // vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
     }
 
 
