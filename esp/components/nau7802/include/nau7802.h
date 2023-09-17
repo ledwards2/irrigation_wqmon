@@ -1,17 +1,32 @@
 #include "driver/i2c.h"
 #include <esp_log.h>
 #include <stdbool.h>
+#include <string.h>
 #define NAU7802_DEV_ADDR 0x2A // might be 0x15 depending on endianness. 
 #define WAIT_TICKS 10
 #define RESET_DELAY 1
 
 #define NAU7802_I2C_FREQ 200000
 
+#define CAL_STRAIN_2 "cali_weight_2"
+#define CAL_STRAIN_1 "cali_weight_1"
+#define CALIBRATE_STRAIN_FAIL 1 
+#define CALIBRATE_STRAIN_NO_CHANGE 2  
+#define CALIBRATED_STRAIN 3 
 struct nau7802_handle {
     i2c_config_t conf;
     i2c_port_t portNum;
 };
+struct NAU7802CalConfig {
+	int32_t knownStrainRaw[2]; 
+	float knownWeightActual[2]; 
 
+	float strainSlope; 
+	float strainInt; 
+	struct nau7802_handle* handle; 
+}; 
+
+typedef struct NAU7802CalConfig NAU7802CalConfig_t; 
 
 int nau7802_init(int sda_num, int scl_num, i2c_port_t port_num, struct nau7802_handle* handle);
 void nau7802_reset(struct nau7802_handle* handle);
@@ -24,7 +39,11 @@ esp_err_t  writeReg(struct nau7802_handle* handle, uint8_t reg, uint8_t val);
 esp_err_t readReg(struct nau7802_handle* handle, uint8_t addr, uint8_t* res);
 bool getBit(struct nau7802_handle* handle, uint8_t addr, uint8_t bit); 
 extern int32_t nau7802_read_conversion(struct nau7802_handle* handle); 
+float calculate_slope_weight(float x1, float y1, float x2, float y2); 
+float calculate_intercept_weight(float x1, float y1, float x2, float y2);
+extern int set_cal_if_strain(char variable[], float realValue, NAU7802CalConfig_t* cfg);
 
+float nau7802_get_weight(int32_t strain, NAU7802CalConfig_t* cfg);
 
 /**
  * Enum used to define the scale registers

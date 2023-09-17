@@ -273,14 +273,17 @@ void received_event_handler(void* _unused) {
                     }
                     
                     if ((t = lwjson_find(&lwjson, "value")) != NULL) {
-                        if (t->type == LWJSON_TYPE_NUM_REAL || t->type == LWJSON_TYPE_NUM_INT) {
+
+                        if (t->type == LWJSON_TYPE_NUM_INT) {
+                            value = (float) (t->u.num_int); 
+                        } else if (t->type == LWJSON_TYPE_NUM_REAL) {
                             value = t->u.num_real; 
-                      
-                            ESP_LOGI(TAG, "Value: %f", value);
                         } else { 
                             ESP_LOGE(TAG, "Calibration value must be real float or int, was: %i", t->type); 
                             continue; 
                         }
+                        ESP_LOGI(TAG, "Value: %f", value);
+
                     } else {
                         continue; 
                     }
@@ -294,13 +297,21 @@ void received_event_handler(void* _unused) {
                     // Now we have valid variable and lengths. 
 
                     memcpy(notification.variable, variable, variableLen); 
+                    ESP_LOGE(TAG, "Did memcpy");
                     notification.variable[variableLen] = '\0';
-                    xQueueSendToBack(CalibrationValues, &notification, 0);  
+                    ESP_LOGE(TAG, "Appended null");
+
+                    BaseType_t err = xQueueSendToBack(CalibrationValues, &notification, 0);  
+                    if (err != pdTRUE) {
+                        ESP_LOGE(TAG, "Could not send calibration message to queue"); 
+                    } else {
+                        ESP_LOGE(TAG, "Sent! ");
+                    }
                 }
             }
         } else {
             // If we didn't receive, the queue might not be ready.
-            vTaskDelay(10 / portTICK_PERIOD_MS); 
+            vTaskDelay(100 / portTICK_PERIOD_MS); 
         }
     }
     // If we break the loop, this should get freed. 

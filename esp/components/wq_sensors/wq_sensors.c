@@ -101,7 +101,7 @@ float calculate_intercept(float x1, float y1, float x2, float y2) {
     return y1 - (slope * x1); 
 }
 
-int set_cal_if_suitable(char variable[], float realValue, AdcSensorConfig_t* cfg) {
+int set_cal_if_adc_sensor(char variable[], float realValue, AdcSensorConfig_t* cfg) {
     int ret = CALIBRATE_FAIL; 
     int adcRead; 
     if (!strcmp(variable, EC_CAL_1)) {
@@ -207,7 +207,7 @@ int set_cal_if_suitable(char variable[], float realValue, AdcSensorConfig_t* cfg
         ret = CALIBRATED_TDS; 
     } else {
         // Not suitable - flag that this isn't an ADC sensor.
-        ret = CALIBRATE_NO_CHANGE; 
+        ret = CALIBRATE_FAIL; 
     } 
     return ret; 
 }

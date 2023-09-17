@@ -29,7 +29,7 @@
 #define DS18B20_SAMPLE_PERIOD        (1000)   // milliseconds
 
 
-#define SENSOR_POLL_TIME_MS 10000
+#define SENSOR_POLL_TIME_MS 60 * 1000 * 2
 #define I2C_SCL 9
 #define I2C_SDA 10 
 #define I2C_PORT I2C_NUM_1
@@ -223,7 +223,7 @@ void handler_thread(void* _unused)
         &param,
         tskIDLE_PRIORITY + 3, 
         NULL); 
-    /*
+    
     xTaskCreate(
         nau7802_handler, 
         "nau7802", 
@@ -232,7 +232,7 @@ void handler_thread(void* _unused)
         tskIDLE_PRIORITY + 3, 
         NULL); 
     
-    */
+    
     struct tago_msg msgRx;
     
 
@@ -315,7 +315,8 @@ void adc_sensor_handler(void* pvParam) {
         // Peek the queue, check if it is a sensor this thread cares about 
         msgPending = xQueuePeek(CalibrationValues, &notification, 10); 
         if (msgPending == pdTRUE) {
-            calStatus = set_cal_if_suitable(notification.variable, notification.value, &senseCfg);
+            ESP_LOGI(TAG, "Pending message in ADC queue");
+            calStatus = set_cal_if_adc_sensor(notification.variable, notification.value, &senseCfg);
             if (calStatus != CALIBRATE_FAIL) {
                 // We had a message. It was for one of these sensors. Take it out of the queue.
                 xQueueReceive(CalibrationValues, &notification, 10); 
@@ -365,12 +366,6 @@ void adc_sensor_handler(void* pvParam) {
                 ESP_LOGI(TAG, "Calibration not ADC"); 
             }
         } 
-        // if ()
-        // if it is ec, ph, turb or tds point 1 or point 2 
-        // then set internal variables. 
-        // if it is point 2, calculate slope and intercept and put away in spiffs. 
-        // Need Generic functions for this. 
-
 
         ecReading = ec_get_adc(); 
         phReading = ph_get_adc(); 
@@ -384,7 +379,7 @@ void adc_sensor_handler(void* pvParam) {
         phMsg.value = adc_to_ph(phReading, &senseCfg); 
         turbMsg.value = adc_to_turb(turbReading, &senseCfg); 
         tdsMsg.value = adc_to_tds(tdsReading, &senseCfg); 
-        printf("Reading: %fmS/cm\n", ecMsg.value); 
+        ESP_LOGI(TAG, "pH Slope: %f, int: %f", senseCfg.phSlope, senseCfg.phInt);
 
         ESP_LOGI(TAG, "ec Slope: %f, int: %f", senseCfg.ecSlope, senseCfg.ecInt);
 
@@ -427,6 +422,7 @@ void spiffs_read_cal_param(char* fileName, float* valueRead) {
         fscanf(f, "%f", valueRead); 
     } else {
         ESP_LOGW("spiffs-read-cal-param", "file %s for reading not found", fileName); 
+        *valueRead = 0;
     }
     fclose(f); 
 
@@ -436,8 +432,12 @@ void spiffs_read_cal_param(char* fileName, float* valueRead) {
 void nau7802_handler(void* pvParam) {
     struct nau7802_handle handle; 
     struct tago_msg strainMsg; 
+    struct tago_msg weightMsg; 
     memcpy(strainMsg.variable, "strain", sizeof("strain")); 
     memcpy(strainMsg.unit, "raw", sizeof("raw")); 
+    
+    memcpy(weightMsg.variable, "weight", sizeof("weigt")); 
+    memcpy(weightMsg.unit, "kg", sizeof("kg")); 
 
     esp_err_t res = ESP_FAIL;
     while (res != ESP_OK) {
@@ -451,20 +451,70 @@ void nau7802_handler(void* pvParam) {
     while (!sensorMessages) {
         vTaskDelay(100); 
     }
+    struct CalibrationNotification notification; 
+
+
+    BaseType_t msgPending; 
+    NAU7802CalConfig_t strainCfg; 
+    strainCfg.handle = &handle;
+    spiffs_read_cal_param("/spiffs/strain_slope.txt", &strainCfg.strainSlope); 
+    spiffs_read_cal_param("/spiffs/strain_intercept.txt", &strainCfg.strainInt); 
     int32_t strain; 
+    int calStatus; 
     while (1) {
+
+        msgPending = xQueuePeek(CalibrationValues, &notification, 10); 
+        if (msgPending == pdTRUE) {
+            ESP_LOGE(TAG, "Got from queue!");
+            calStatus = set_cal_if_strain(notification.variable, notification.value, &strainCfg);
+            ESP_LOGE(TAG, "Set if strain, %i", calStatus);
+            if (calStatus != CALIBRATE_STRAIN_FAIL) {
+                // We had a message. It was for one of these sensors. Take it out of the queue.
+                xQueueReceive(CalibrationValues, &notification, 10); 
+                ESP_LOGI(TAG, "Got from queue");
+                // Now save to SPIFFS 
+                if (calStatus != CALIBRATE_STRAIN_NO_CHANGE) {
+                    char* slopeFileName; 
+                    char* intFileName; 
+                    float slope; 
+                    float intercept; 
+
+                    if (calStatus == CALIBRATED_STRAIN) {
+                        slopeFileName = "/spiffs/strain_slope.txt"; 
+                        intFileName = "/spiffs/strain_intercept.txt"; 
+                        slope = strainCfg.strainSlope; 
+                        intercept = strainCfg.strainInt; 
+                    } else {
+                        ESP_LOGE(TAG, "Calibration result not known"); 
+                        continue; 
+                    }
+                    ESP_LOGI(TAG, "Writing slope: %f for, %s, int %f to %s", slope, slopeFileName, intercept, intFileName);
+                    spiffs_write_cal_param(slopeFileName, slope); 
+                    spiffs_write_cal_param(intFileName, intercept); 
+                } 
+                
+            } else {
+                ESP_LOGI(TAG, "Calibration not strain"); 
+            }
+        } 
+
+
         ESP_LOGI(TAG, "Reading strain");
         strain = nau7802_read_conversion(&handle); 
         strainMsg.value = strain; 
+
+        weightMsg.value = nau7802_get_weight(strain, &strainCfg);
         if (xQueueSendToBack(sensorMessages, &strainMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
         }
+
+        if (xQueueSendToBack(sensorMessages, &weightMsg, 10) != pdTRUE) {
+            ESP_LOGE(TAG, "Could not send to handler"); 
+        }
         ESP_LOGI("nau7802", "strain: %li", strain);
+        ESP_LOGI("Weight: " , "%f", weightMsg.value);
         vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
     }
-
-
-
 }
 
 

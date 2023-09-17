@@ -102,4 +102,4 @@ extern int turb_get_adc();
 extern int tds_get_adc(); 
 extern esp_err_t analog_sensors_init(AdcSensorConfig_t* cfg);
 
-extern int set_cal_if_suitable(char variable[], float realValue, AdcSensorConfig_t* cfg); 
+extern int set_cal_if_adc_sensor(char variable[], float realValue, AdcSensorConfig_t* cfg); 

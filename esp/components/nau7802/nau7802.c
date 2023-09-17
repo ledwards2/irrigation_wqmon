@@ -66,7 +66,7 @@ int32_t nau7802_read_conversion(struct nau7802_handle* handle) {
 }
 
 void nau7802_configure(struct nau7802_handle* handle) {
-    uint8_t ctrl = (1 << NAU7802_CTRL1_CRP) | (0b111 << NAU7802_CTRL1_VLDO) | (0b111 << NAU7802_CTRL1_GAIN); 
+    uint8_t ctrl = (1 << NAU7802_CTRL1_CRP) | (0b111 << NAU7802_CTRL1_VLDO) | (0b110 << NAU7802_CTRL1_GAIN); 
 
     writeReg(handle, NAU7802_CTRL1, ctrl); 
 
@@ -199,3 +199,50 @@ bool getBit(struct nau7802_handle* handle, uint8_t addr, uint8_t bit) {
     }
     return false; 
 }
+
+float calculate_slope_weight(float x1, float y1, float x2, float y2) {
+    return (y2 - y1) / (x2 - x1); 
+}
+
+float calculate_intercept_weight(float x1, float y1, float x2, float y2) {
+    float slope = calculate_slope_weight(x1, y1, x2, y2); 
+
+    return y1 - (slope * x1); 
+}
+
+float nau7802_get_weight(int32_t strain, NAU7802CalConfig_t* cfg) {
+    return cfg->strainSlope * ((float) (strain)) + cfg->strainInt;
+}
+
+int set_cal_if_strain(char variable[], float realValue, NAU7802CalConfig_t* cfg) {
+    int success = CALIBRATE_STRAIN_FAIL; 
+    int32_t strain = nau7802_read_conversion(cfg->handle);
+
+    if (!strcmp(variable, CAL_STRAIN_1)) {
+        cfg->knownWeightActual[0] = realValue; 
+        cfg->knownStrainRaw[0] = strain; 
+        success = CALIBRATE_STRAIN_NO_CHANGE; 
+    } else if (!strcmp(variable, CAL_STRAIN_2)) {
+        cfg->knownWeightActual[1] = realValue; 
+        cfg->knownStrainRaw[1] = strain;
+        cfg->strainSlope = calculate_slope_weight(
+            cfg->knownStrainRaw[0], 
+            cfg->knownWeightActual[0], 
+            cfg->knownStrainRaw[1],
+            cfg->knownWeightActual[1]
+        ); 
+
+        cfg->strainInt = calculate_intercept_weight(
+            cfg->knownStrainRaw[0], 
+            cfg->knownWeightActual[0], 
+            cfg->knownStrainRaw[1],
+            cfg->knownWeightActual[1]
+        );
+        success = CALIBRATED_STRAIN; 
+        //ESP_LOGI("knwon weigh 1: %f",cfg->knownWeightActual[0] );
+        ESP_LOGI(TAG, "known weight 1: %f, 2: %f, strain 1: %li, strain 2: %li, slope: %f, int: %f", cfg->knownWeightActual[0], cfg->knownWeightActual[1], cfg->knownStrainRaw[0], cfg->knownStrainRaw[1],  cfg->strainSlope, cfg->strainInt);
+    } 
+    
+    return success; 
+
+} 

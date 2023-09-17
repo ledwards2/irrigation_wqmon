@@ -56,7 +56,7 @@ void received_event_handler(void* _unused);
 #define MQTT_MSG_TOPIC_LEN 63
 #define MQTT_MSG_DATA_LEN 127
 #define CALI_QUEUE_LEN 1 
-#define NOTIFICATION_SENSOR_LEN 10
+#define NOTIFICATION_SENSOR_LEN 20
 
 struct CalibrationNotification {
     char variable[NOTIFICATION_SENSOR_LEN]; 
