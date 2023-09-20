@@ -15,8 +15,7 @@ struct MqttMsg {
 }; 
 static const char *TAG = "wifi station";
 QueueHandle_t receivedEvents; 
-
-static EventGroupHandle_t s_wifi_event_group;
+EventGroupHandle_t s_wifi_event_group;
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -25,6 +24,8 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_retry_num < WIFI_MAX_RETRY) {
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(TAG, "retry to connect to the AP");
@@ -37,12 +38,13 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        mqtt_init();
     }
 }
 
 void wifi_init(char wifi_ssid[], char wifi_pwd[])
 {
-    
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
@@ -143,7 +145,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-        // Try reconnecting 
+        // Try reconnecting after a little while
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
         esp_mqtt_client_reconnect(client);
         break;
 
@@ -216,7 +219,6 @@ void mqtt_init() {
     esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
     esp_log_level_set("outbox", ESP_LOG_VERBOSE);
     */ 
-
     receivedEvents = xQueueCreate(MQTT_RX_EVENT_QUEUE_LEN, sizeof(struct MqttMsg));
     if (receivedEvents == NULL) {
         ESP_LOGE(TAG, "Couldn't create received message queue");
@@ -245,7 +247,6 @@ void received_event_handler(void* _unused) {
     
     char* variable; 
     float value;  
-    CalibrationValues = xQueueCreate(CALI_QUEUE_LEN, sizeof(struct CalibrationNotification));
     struct CalibrationNotification notification; 
     lwjson_init(&lwjson, tokens, LWJSON_ARRAYSIZE(tokens));
     while (1) {
@@ -331,11 +332,22 @@ char* tago_format_msg(char* variable, float value, char* unit) {
 }
 
 esp_err_t tago_send(struct tago_msg msg) {
-    //return xQueueSendToBack(mqtt_tx_msgq, msg);
-    char* mqtt_msg = tago_format_msg(msg.variable, msg.value, msg.unit);
-    esp_err_t msg_id = esp_mqtt_client_publish(client, "tago/data/post", mqtt_msg, 0, 0, 0);
-    free(mqtt_msg);
-    return msg_id;
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_CONNECTED_BIT,
+            pdFALSE,
+            pdFALSE,
+            0);
+
+    if (bits & WIFI_CONNECTED_BIT) {
+
+     char* mqtt_msg = tago_format_msg(msg.variable, msg.value, msg.unit);
+        esp_err_t msg_id = esp_mqtt_client_publish(client, "tago/data/post", mqtt_msg, 0, 0, 0);
+        free(mqtt_msg);
+        return msg_id;
+    } else {
+        return ESP_ERR_WIFI_NOT_CONNECT; 
+    }
+    
 }
 
 esp_err_t tago_subscribe(char* topic) {

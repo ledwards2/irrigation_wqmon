@@ -172,16 +172,13 @@ void handler_thread(void* _unused)
     esp_wifi_get_mac(ESP_IF_WIFI_STA, mac); 
     ESP_LOGI("MAC address", "MAC address: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);    
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    mqtt_init();
+    // mqtt_init();
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     tago_subscribe("tago/down");
     
     ghota_config_t ghconfig = {
         .filenamematch = "irrigation_wqmon_esp32s3.bin",
-        //.orgname = "ledwards2", 
-        //.reponame = "irrigation_wqmon",
-        // Don't OTA update storage partition. 
         .storagenamematch = "-",
         .storagepartitionname = "storage", 
         .updateInterval = 30, 
@@ -239,6 +236,8 @@ void handler_thread(void* _unused)
     struct tago_msg temp_msg;
     memcpy(temp_msg.unit, "deg C", 6);
     memcpy(&temp_msg.variable, "temp", 5); 
+    EventBits_t bits;
+    CalibrationValues = xQueueCreate(CALI_QUEUE_LEN, sizeof(struct CalibrationNotification));
 
     while (1)  {
         /*
@@ -255,8 +254,16 @@ void handler_thread(void* _unused)
        if (xQueueReceive(sensorMessages, &msgRx, portMAX_DELAY)) {
         tago_send(msgRx); 
        }
-        //vTaskDelay(10000 / portTICK_PERIOD_MS);
 
+        EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            0);
+       if (bits & WIFI_FAIL_BIT) {
+        esp_wifi_connect();
+        //vTaskDelay(10000 / portTICK_PERIOD_MS);
+       } 
     }
 
 }
@@ -379,6 +386,8 @@ void adc_sensor_handler(void* pvParam) {
         phMsg.value = adc_to_ph(phReading, &senseCfg); 
         turbMsg.value = adc_to_turb(turbReading, &senseCfg); 
         tdsMsg.value = adc_to_tds(tdsReading, &senseCfg); 
+        printf("Reading: EC: %f, pH: %f, turb: %f", 
+            ecMsg.value, phMsg.value, turbMsg.value);
         ESP_LOGI(TAG, "pH Slope: %f, int: %f", senseCfg.phSlope, senseCfg.phInt);
 
         ESP_LOGI(TAG, "ec Slope: %f, int: %f", senseCfg.ecSlope, senseCfg.ecInt);

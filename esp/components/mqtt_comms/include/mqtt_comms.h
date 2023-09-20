@@ -43,6 +43,7 @@ struct tago_msg {
 // name(str), value(float), unit(str)
 extern void wifi_init(char ssid[], char pwd[]);
 extern void mqtt_init(); 
+extern EventGroupHandle_t s_wifi_event_group;
 
 extern QueueHandle_t mqtt_tx_msgq; 
 
