@@ -341,6 +341,7 @@ esp_err_t tago_send(struct tago_msg msg) {
     if (bits & WIFI_CONNECTED_BIT) {
 
      char* mqtt_msg = tago_format_msg(msg.variable, msg.value, msg.unit);
+     ESP_LOGI(TAG, "publishing: %s", mqtt_msg); 
         esp_err_t msg_id = esp_mqtt_client_publish(client, "tago/data/post", mqtt_msg, 0, 0, 0);
         free(mqtt_msg);
         return msg_id;

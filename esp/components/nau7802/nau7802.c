@@ -181,7 +181,6 @@ esp_err_t readReg(struct nau7802_handle* handle, uint8_t addr, uint8_t* res) {
         sizeof(res), 
         (TickType_t) (WAIT_TICKS)); 
 
-    ESP_LOGI(TAG, "Read from %x: %x", addr, *res);
     return status; 
 
 }
@@ -214,9 +213,9 @@ float nau7802_get_weight(int32_t strain, NAU7802CalConfig_t* cfg) {
     return cfg->strainSlope * ((float) (strain)) + cfg->strainInt;
 }
 
-int set_cal_if_strain(char variable[], float realValue, NAU7802CalConfig_t* cfg) {
+int set_cal_if_strain(char variable[], float realValue, NAU7802CalConfig_t* cfg, int32_t strain) {
     int success = CALIBRATE_STRAIN_FAIL; 
-    int32_t strain = nau7802_read_conversion(cfg->handle);
+    // int32_t strain = nau7802_read_conversion(cfg->handle);
 
     if (!strcmp(variable, CAL_STRAIN_1)) {
         cfg->knownWeightActual[0] = realValue; 

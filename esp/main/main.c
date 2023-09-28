@@ -27,8 +27,7 @@
 #define DS18B20_MAX_DEVICES          (1)
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
 #define DS18B20_SAMPLE_PERIOD        (1000)   // milliseconds
-
-
+#define STRAIN_MA_LENGTH 100
 #define SENSOR_POLL_TIME_MS 60 * 1000 * 2
 #define I2C_SCL 9
 #define I2C_SDA 10 
@@ -40,6 +39,7 @@ void spiffs_read_cal_param(char* fileName, float* val);
 void spiffs_write_cal_param(char* fileName, float value);
 
 void nau7802_handler(void* pvParam);
+int32_t arr_avg(int32_t* arr, int len);
 QueueHandle_t sensorMessages;
 
 EventGroupHandle_t calibrationFlags; 
@@ -430,7 +430,8 @@ void spiffs_read_cal_param(char* fileName, float* valueRead) {
     FILE* f = fopen(fileName, "r"); 
     if (f != NULL) {
         fscanf(f, "%f", valueRead); 
-    } else {
+        ESP_LOGI(TAG, "Read from file %s: %f", fileName, *valueRead);
+        } else {
         ESP_LOGW("spiffs-read-cal-param", "file %s for reading not found", fileName); 
         *valueRead = 0;
     }
@@ -446,7 +447,7 @@ void nau7802_handler(void* pvParam) {
     memcpy(strainMsg.variable, "strain", sizeof("strain")); 
     memcpy(strainMsg.unit, "raw", sizeof("raw")); 
     
-    memcpy(weightMsg.variable, "weight", sizeof("weigt")); 
+    memcpy(weightMsg.variable, "weight", sizeof("weight")); 
     memcpy(weightMsg.unit, "kg", sizeof("kg")); 
 
     esp_err_t res = ESP_FAIL;
@@ -471,12 +472,19 @@ void nau7802_handler(void* pvParam) {
     spiffs_read_cal_param("/spiffs/strain_intercept.txt", &strainCfg.strainInt); 
     int32_t strain; 
     int calStatus; 
+
+    int32_t recentStrainReadings[STRAIN_MA_LENGTH]; 
+    int strainReadingIdx = 0; 
+    TickType_t prevTick = xTaskGetTickCount(); 
+    TickType_t newTick = prevTick; 
+
+
     while (1) {
 
         msgPending = xQueuePeek(CalibrationValues, &notification, 10); 
         if (msgPending == pdTRUE) {
             ESP_LOGE(TAG, "Got from queue!");
-            calStatus = set_cal_if_strain(notification.variable, notification.value, &strainCfg);
+            calStatus = set_cal_if_strain(notification.variable, notification.value, &strainCfg, arr_avg(&recentStrainReadings[0], STRAIN_MA_LENGTH));
             ESP_LOGE(TAG, "Set if strain, %i", calStatus);
             if (calStatus != CALIBRATE_STRAIN_FAIL) {
                 // We had a message. It was for one of these sensors. Take it out of the queue.
@@ -509,24 +517,42 @@ void nau7802_handler(void* pvParam) {
         } 
 
 
-        ESP_LOGI(TAG, "Reading strain");
-        strain = nau7802_read_conversion(&handle); 
-        strainMsg.value = strain; 
+        recentStrainReadings[strainReadingIdx] = nau7802_read_conversion(&handle); 
+        // ESP_LOGI(TAG, "%i: Raw reading: %li, MA: %li", strainReadingIdx, recentStrainReadings[strainReadingIdx], arr_avg(&recentStrainReadings[0], STRAIN_MA_LENGTH));
+        strainReadingIdx += 1; 
+        strainReadingIdx = strainReadingIdx % STRAIN_MA_LENGTH;
+    
+        newTick = xTaskGetTickCount(); 
 
-        weightMsg.value = nau7802_get_weight(strain, &strainCfg);
-        if (xQueueSendToBack(sensorMessages, &strainMsg, 10) != pdTRUE) {
-            ESP_LOGE(TAG, "Could not send to handler"); 
-        }
+        if (newTick - prevTick > SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS) {
+            strainMsg.value = arr_avg(&recentStrainReadings[0], STRAIN_MA_LENGTH); 
 
-        if (xQueueSendToBack(sensorMessages, &weightMsg, 10) != pdTRUE) {
-            ESP_LOGE(TAG, "Could not send to handler"); 
+            weightMsg.value = nau7802_get_weight(strainMsg.value, &strainCfg);
+            if (xQueueSendToBack(sensorMessages, &strainMsg, 10) != pdTRUE) {
+                ESP_LOGE(TAG, "Could not send to handler"); 
+            }
+
+            if (xQueueSendToBack(sensorMessages, &weightMsg, 10) != pdTRUE) {
+                ESP_LOGE(TAG, "Could not send to handler"); 
+            }
+            ESP_LOGI("nau7802", "strain: %f", strainMsg.value);
+            ESP_LOGI("Weight: " , "%f", weightMsg.value);
+            prevTick = newTick; 
+
         }
-        ESP_LOGI("nau7802", "strain: %li", strain);
-        ESP_LOGI("Weight: " , "%f", weightMsg.value);
-        vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+
     }
+
 }
 
+int32_t arr_avg(int32_t* arr, int len) {
+    int64_t sum = 0;
+    for(int i = 0; i < len; i++) {
+        sum += arr[i];
+    }
+    return sum / len; 
+}
 
 
 void ds18b20_handler(void* pvParam) {
@@ -564,6 +590,7 @@ void ds18b20_handler(void* pvParam) {
     while (!sendTo) {
         vTaskDelay(100); 
     }
+
     while (1) {
         ds18b20_convert_all(owb);
 
@@ -571,7 +598,10 @@ void ds18b20_handler(void* pvParam) {
             // so use the first device to determine the delay
         ds18b20_wait_for_conversion(dev);
 
-        ds18b20_read_temp(dev, &msg.value); 
+        ds18b20_read_temp(dev, &temp); 
+        if (temp > -100) {
+            msg.value = temp; 
+        }
         ESP_LOGI(TAG, "Temp: %f", msg.value); 
         if (xQueueSendToBack(sensorMessages, &msg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to queue");

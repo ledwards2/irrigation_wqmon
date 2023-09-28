@@ -41,7 +41,7 @@ bool getBit(struct nau7802_handle* handle, uint8_t addr, uint8_t bit);
 extern int32_t nau7802_read_conversion(struct nau7802_handle* handle); 
 float calculate_slope_weight(float x1, float y1, float x2, float y2); 
 float calculate_intercept_weight(float x1, float y1, float x2, float y2);
-extern int set_cal_if_strain(char variable[], float realValue, NAU7802CalConfig_t* cfg);
+extern int set_cal_if_strain(char variable[], float realValue, NAU7802CalConfig_t* cfg, int32_t strain);
 
 float nau7802_get_weight(int32_t strain, NAU7802CalConfig_t* cfg);
 
