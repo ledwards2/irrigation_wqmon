@@ -23,6 +23,7 @@
 #include "ds18b20.h"
 #include "nau7802.h"
 
+#define TICK_RESTART_THRESHOLD 2 * 60 * 60 * 1000 * portTICK_PERIOD_MS
 #define GPIO_DS18B20_0       (12)
 #define DS18B20_MAX_DEVICES          (1)
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
@@ -264,6 +265,10 @@ void handler_thread(void* _unused)
         esp_wifi_connect();
         //vTaskDelay(10000 / portTICK_PERIOD_MS);
        } 
+
+       if (xTaskGetTickCount() > TICK_RESTART_THRESHOLD) {
+        esp_restart(); 
+       }
     }
 
 }
