@@ -206,6 +206,7 @@ void handler_thread(void* _unused)
 
     calibrationFlags = xEventGroupCreate();  
     void* param = &sensorMessages; 
+    
     xTaskCreate(
         ds18b20_handler, 
         "ds18b20",
@@ -230,7 +231,7 @@ void handler_thread(void* _unused)
         tskIDLE_PRIORITY + 3, 
         NULL); 
     
-    
+
     struct tago_msg msgRx;
     
 
@@ -399,10 +400,12 @@ void adc_sensor_handler(void* pvParam) {
 
         if (xQueueSendToBack(sensorMessages, &ecMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
+            esp_restart(); 
         }
 
         if (xQueueSendToBack(sensorMessages, &phMsg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to handler"); 
+            esp_restart(); 
         }
         /* 
         if (xQueueSendToBack(sensorMessages, &turbMsg, 10) != pdTRUE) {
@@ -535,10 +538,12 @@ void nau7802_handler(void* pvParam) {
             weightMsg.value = nau7802_get_weight(strainMsg.value, &strainCfg);
             if (xQueueSendToBack(sensorMessages, &strainMsg, 10) != pdTRUE) {
                 ESP_LOGE(TAG, "Could not send to handler"); 
+                esp_restart(); 
             }
 
             if (xQueueSendToBack(sensorMessages, &weightMsg, 10) != pdTRUE) {
                 ESP_LOGE(TAG, "Could not send to handler"); 
+                esp_restart(); 
             }
             ESP_LOGI("nau7802", "strain: %f", strainMsg.value);
             ESP_LOGI("Weight: " , "%f", weightMsg.value);
@@ -610,6 +615,7 @@ void ds18b20_handler(void* pvParam) {
         ESP_LOGI(TAG, "Temp: %f", msg.value); 
         if (xQueueSendToBack(sensorMessages, &msg, 10) != pdTRUE) {
             ESP_LOGE(TAG, "Could not send to queue");
+            esp_restart(); 
         }
         vTaskDelay(SENSOR_POLL_TIME_MS / portTICK_PERIOD_MS); 
     }

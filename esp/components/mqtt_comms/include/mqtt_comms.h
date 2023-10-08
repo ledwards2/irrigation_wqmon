@@ -23,7 +23,10 @@
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
 
 #define MQTT_BROKER_URL "mqtt://mqtt.tago.io"
-#define MQTT_BROKER_PWD "54be2595-549f-44c2-9541-3bb1e362722a"
+// Production device 
+#define MQTT_BROKER_PWD "54be2595-549f-44c2-9541-3bb1e362722a"]
+// For testing 
+//#define MQTT_BROKER_PWD "0e6b2807-5d61-4f31-8344-68c1b89ea95c"
 #define MQTT_BROKER_USERNAME "Token"
 // WPA standard max length for passwords is 63 bits 
 #define WIFI_PWD_LEN 64 
