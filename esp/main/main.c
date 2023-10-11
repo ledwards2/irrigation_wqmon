@@ -23,7 +23,7 @@
 #include "ds18b20.h"
 #include "nau7802.h"
 
-#define TICK_RESTART_THRESHOLD 2 * 60 * 60 * 1000 * portTICK_PERIOD_MS
+#define TICK_RESTART_THRESHOLD 2 * 60 * 60 * 1000 / portTICK_PERIOD_MS
 #define GPIO_DS18B20_0       (12)
 #define DS18B20_MAX_DEVICES          (1)
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
@@ -252,21 +252,22 @@ void handler_thread(void* _unused)
 
         tago_send(temp_msg);
         */ 
-
-       if (xQueueReceive(sensorMessages, &msgRx, portMAX_DELAY)) {
+    
+       if (xQueueReceive(sensorMessages, &msgRx, 2000 / portTICK_PERIOD_MS)) {
         tago_send(msgRx); 
        }
-
+        
         EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
             WIFI_FAIL_BIT,
             pdFALSE,
             pdFALSE,
-            0);
+            10);
        if (bits & WIFI_FAIL_BIT) {
         esp_wifi_connect();
         //vTaskDelay(10000 / portTICK_PERIOD_MS);
        } 
-
+       
+        ESP_LOGE(TAG, "Tick count %lu", xTaskGetTickCount());
        if (xTaskGetTickCount() > TICK_RESTART_THRESHOLD) {
         esp_restart(); 
        }
