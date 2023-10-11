@@ -24,7 +24,7 @@
 
 #define MQTT_BROKER_URL "mqtt://mqtt.tago.io"
 // Production device 
-#define MQTT_BROKER_PWD "54be2595-549f-44c2-9541-3bb1e362722a"]
+#define MQTT_BROKER_PWD "54be2595-549f-44c2-9541-3bb1e362722a"
 // For testing 
 //#define MQTT_BROKER_PWD "0e6b2807-5d61-4f31-8344-68c1b89ea95c"
 #define MQTT_BROKER_USERNAME "Token"
